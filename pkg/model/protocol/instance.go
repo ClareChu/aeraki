@@ -36,6 +36,8 @@ const (
 	Kafka Instance = "Kafka"
 	// Zookeeper declares that the port carries Zookeeper traffic.
 	Zookeeper Instance = "Zookeeper"
+	// MetaProtocol declares that the port carries MetaProtocol traffic.
+	MetaProtocol Instance = "MetaProtocol"
 	// Unsupported - value to signify that the protocol is unsupported.
 	Unsupported Instance = "UnsupportedProtocol"
 )
@@ -57,6 +59,8 @@ func Parse(s string) Instance {
 		return Kafka
 	case "zookeeper":
 		return Zookeeper
+	case "metaprotocol":
+		return MetaProtocol
 	}
 
 	return Unsupported
@@ -76,6 +80,16 @@ func (i Instance) IsDubbo() bool {
 func (i Instance) IsThrift() bool {
 	switch i {
 	case Thrift:
+		return true
+	default:
+		return false
+	}
+}
+
+// IsMetaProtocol is true for protocols that use MetaProtocol as transport protocol
+func (i Instance) IsMetaProtocol() bool {
+	switch i {
+	case MetaProtocol:
 		return true
 	default:
 		return false

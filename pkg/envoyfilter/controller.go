@@ -88,14 +88,14 @@ func (c *Controller) mainLoop(stop <-chan struct{}) {
 		if err != nil {
 			controllerLog.Errorf("%v", err)
 			// Retry if failed to push envoyFilters to AP IServer
-			c.ConfigUpdate(istiomodel.EventUpdate)
+			c.ConfigUpdated(istiomodel.EventUpdate)
 		}
 	}
 	debouncer := debounce.New(debounceAfter, debounceMax, callback, stop)
 	for {
 		select {
 		case e := <-c.pushChannel:
-			controllerLog.Debugf("Receive event from push chanel : %v", e)
+			controllerLog.Debugf("receive event from push chanel : %v", e)
 			debouncer.Bounce()
 		case <-stop:
 			break
@@ -116,7 +116,7 @@ func (c *Controller) pushEnvoyFilters2APIServer() error {
 
 	for _, oldEnvoyFilter := range existingEnvoyFilters.Items {
 		if newEnvoyFilter, ok := generatedEnvoyFilters[oldEnvoyFilter.Name]; !ok {
-			controllerLog.Infof("Deleting EnvoyFilter: %v", model.Struct2JSON(oldEnvoyFilter))
+			controllerLog.Infof("deleting EnvoyFilter: %v", model.Struct2JSON(oldEnvoyFilter))
 			err = c.istioClientset.NetworkingV1alpha3().EnvoyFilters(configRootNS).Delete(context.TODO(), oldEnvoyFilter.Name,
 				v1.DeleteOptions{})
 			if err != nil {
@@ -124,7 +124,7 @@ func (c *Controller) pushEnvoyFilters2APIServer() error {
 			}
 		} else {
 			if !proto.Equal(newEnvoyFilter.Envoyfilter, &oldEnvoyFilter.Spec) {
-				controllerLog.Infof("Updating EnvoyFilter: %v", model.Struct2JSON(*newEnvoyFilter.Envoyfilter))
+				controllerLog.Infof("updating EnvoyFilter: %v", model.Struct2JSON(*newEnvoyFilter.Envoyfilter))
 				_, err = c.istioClientset.NetworkingV1alpha3().EnvoyFilters(configRootNS).Update(context.TODO(),
 					c.toEnvoyFilterCRD(newEnvoyFilter, &oldEnvoyFilter),
 					v1.UpdateOptions{FieldManager: aerakiFieldManager})
@@ -132,7 +132,7 @@ func (c *Controller) pushEnvoyFilters2APIServer() error {
 					err = fmt.Errorf("failed to update EnvoyFilter: %v", err)
 				}
 			} else {
-				controllerLog.Infof("EnvoyFilter: %s unchanged", oldEnvoyFilter.Name)
+				controllerLog.Infof("envoyFilter: %s unchanged", oldEnvoyFilter.Name)
 			}
 			delete(generatedEnvoyFilters, oldEnvoyFilter.Name)
 		}
@@ -142,7 +142,7 @@ func (c *Controller) pushEnvoyFilters2APIServer() error {
 		_, err = c.istioClientset.NetworkingV1alpha3().EnvoyFilters(configRootNS).Create(context.TODO(), c.toEnvoyFilterCRD(wrapper,
 			nil),
 			v1.CreateOptions{FieldManager: aerakiFieldManager})
-		controllerLog.Infof("Creating EnvoyFilter: %v", model.Struct2JSON(*wrapper.Envoyfilter))
+		controllerLog.Infof("creating EnvoyFilter: %v", model.Struct2JSON(*wrapper.Envoyfilter))
 		if err != nil {
 			err = fmt.Errorf("failed to create EnvoyFilter: %v", err)
 		}
@@ -204,9 +204,16 @@ func (c *Controller) generateEnvoyFilters() (map[string]*model.EnvoyFilterWrappe
 		for _, port := range service.Ports {
 			instance := protocol.GetLayer7ProtocolFromPortName(port.Name)
 			if generator, ok := c.generators[instance]; ok {
-				envoyFilterWrappers := generator.Generate(context)
-				for _, wrapper := range envoyFilterWrappers {
-					envoyFilters[wrapper.Name] = wrapper
+				controllerLog.Infof("found generator for port: %s", port.Name)
+				envoyFilterWrappers, err := generator.Generate(context)
+				if err != nil {
+					controllerLog.Errorf("failed to generate envoy filter: service: %s, port: %s, error: %v",
+						config.Name,
+						port.Name, err)
+				} else {
+					for _, wrapper := range envoyFilterWrappers {
+						envoyFilters[wrapper.Name] = wrapper
+					}
 				}
 				break
 			}
@@ -241,7 +248,7 @@ func (c *Controller) findRelatedVirtualService(service *networking.ServiceEntry)
 	return nil, nil
 }
 
-// ConfigUpdate sends a config change event to the pushChannel of connections
-func (c *Controller) ConfigUpdate(event istiomodel.Event) {
+// ConfigUpdated sends a config change event to the pushChannel to trigger the generation of envoyfilters
+func (c *Controller) ConfigUpdated(event istiomodel.Event) {
 	c.pushChannel <- event
 }
